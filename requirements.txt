@@ -1,0 +1,7 @@
+streamlit
+pandas
+nba_api
+openpyxl
+pillow
+requests
+plotly
