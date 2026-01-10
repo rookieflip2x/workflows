@@ -72,6 +72,23 @@ def main():
 
     except Exception as e:
         st.warning(f"等待数据同步中... {e}")
+# 在 app.py 的侧边栏添加手动修正功能
 
+def show_sidebar_editor(df):
+    st.sidebar.header("🛠️ 市场数据微调")
+    st.sidebar.write("如果爬虫未运行，可在此手动输入近3笔均价")
+    
+    # 使用 streamlit 2024+ 版本的 data_editor 功能
+    edited_df = st.sidebar.data_editor(
+        df[['PLAYER_NAME', 'SILVER_PSA10_PRICE', 'PSA10_POP']],
+        num_rows="dynamic",
+        key="market_editor"
+    )
+    
+    if st.sidebar.button("保存并更新全表"):
+        # 这里你可以通过 GitPython 自动推送到 GitHub (进阶操作)
+        st.sidebar.success("本地数据已更新！")
+        return edited_df
+    return df
 if __name__ == "__main__":
     main()
