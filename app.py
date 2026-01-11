@@ -1,94 +1,17 @@
 import streamlit as st
-import pandas as pd
-import numpy as np
 import plotly.express as px
 
-# --- 1. 计算核心模型分数 ---
-def calculate_quant_score(df):
-    # 处理缺失值，防止除以0
-    df['SILVER_PSA10_PRICE'] = df['SILVER_PSA10_PRICE'].replace(0, np.nan)
-    # 公式：(14天均分 * 100) / (价格 * log(Pop + 1))
-    df['FINAL_SCORE'] = (
-        (df['MA14_INDEX'] * 100) / 
-        (df['SILVER_PSA10_PRICE'] * np.log1p(df['PSA10_POP']))
-    ).round(3)
-    return df
+st.set_page_config(page_title="RookieFlip2X Dashboard", layout="wide")
+df = pd.read_csv('data/cards_data.csv')
 
-# --- 2. 网页 UI ---
-def main():
-    st.set_page_config(page_title="RookieFlip2X Quant", layout="wide")
-    st.title("💎 RookieFlip2X 量化投资仪表盘")
-    
-    # 加载数据 (赛场数据 + 市场数据)
-    try:
-        # 建议在本地将赛场csv和市场csv合并
-        df = pd.read_csv("data_final.csv") 
-        df = calculate_quant_score(df)
-        
-        # --- 视觉优化 1: 顶部核心 KPI ---
-        st.subheader("🔥 全新秀年投资性价比榜首")
-        cols = st.columns(3)
-        for i, year in enumerate(["Rookie", "2nd Year", "3rd Year"]):
-            top_player = df[df['EXPERIENCE'].str.contains(year)].sort_values("FINAL_SCORE", ascending=False).iloc[0]
-            cols[i].metric(
-                label=f"{year} 领跑者", 
-                value=top_player['PLAYER_NAME'], 
-                delta=f"Score: {top_player['FINAL_SCORE']}"
-            )
+st.title("🏀 RookieFlip2X 投资决策看板")
 
-        # --- 视觉优化 2: 投资象限气泡图 ---
-        st.divider()
-        st.subheader("🎯 投资决策象限图 (Performance vs. Price)")
-        
-        # 建立交互式气泡图
-        fig = px.scatter(
-            df, 
-            x="MA14_INDEX", 
-            y="SILVER_PSA10_PRICE",
-            size="PSA10_POP", 
-            color="FINAL_SCORE",
-            text="PLAYER_NAME",
-            hover_name="PLAYER_NAME",
-            color_continuous_scale=px.colors.diverging.RdYlGn, # 绿好红差
-            labels={"MA14_INDEX": "14日表现均分 (MA14)", "SILVER_PSA10_PRICE": "银折 PSA 10 价格 ($)"},
-            height=700
-        )
-        
-        # 优化坐标轴：价格越低（Y轴越靠下）代表性价比越高，反转Y轴
-        fig.update_yaxes(autorange="reversed")
-        fig.update_traces(textposition='top center')
-        
-        # 添加象限参考线
-        fig.add_hline(y=df['SILVER_PSA10_PRICE'].median(), line_dash="dot", annotation_text="平均价格")
-        fig.add_vline(x=df['MA14_INDEX'].median(), line_dash="dot", annotation_text="平均表现")
+# 1. 核心象限图
+fig = px.scatter(df, x="price", y="ma14", size="final_score", color="final_score",
+                 hover_name="player", title="价值象限图 (左上为强力买入)")
+st.plotly_chart(fig, use_container_width=True)
 
-        st.plotly_chart(fig, use_container_width=True)
-        st.caption("注：右下角球员（高表现、低价格）为模型锁定的最佳 Flip 标的。")
-
-        # --- 视觉优化 3: 详细数据表 ---
-        st.divider()
-        st.subheader("📋 原始数据穿透")
-        st.dataframe(df.sort_values("FINAL_SCORE", ascending=False), use_container_width=True)
-
-    except Exception as e:
-        st.warning(f"等待数据同步中... {e}")
-# 在 app.py 的侧边栏添加手动修正功能
-
-def show_sidebar_editor(df):
-    st.sidebar.header("🛠️ 市场数据微调")
-    st.sidebar.write("如果爬虫未运行，可在此手动输入近3笔均价")
-    
-    # 使用 streamlit 2024+ 版本的 data_editor 功能
-    edited_df = st.sidebar.data_editor(
-        df[['PLAYER_NAME', 'SILVER_PSA10_PRICE', 'PSA10_POP']],
-        num_rows="dynamic",
-        key="market_editor"
-    )
-    
-    if st.sidebar.button("保存并更新全表"):
-        # 这里你可以通过 GitPython 自动推送到 GitHub (进阶操作)
-        st.sidebar.success("本地数据已更新！")
-        return edited_df
-    return df
-if __name__ == "__main__":
-    main()
+# 2. 操作建议排名
+st.subheader("🔥 实时信号排名")
+top_buys = df.sort_values('final_score', ascending=False).head(5)
+st.table(top_buys[['player', 'final_score', 'ma14', 'price']])
