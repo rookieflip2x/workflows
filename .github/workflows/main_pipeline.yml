@@ -1,0 +1,24 @@
+name: RookieFlip2X Auto Update
+on:
+  schedule:
+    - cron: '0 2 * * *' # 每天凌晨2点运行
+  workflow_dispatch: # 支持手动触发
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with: {python-version: '3.10'}
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run Model
+        run: python scripts/processor.py
+      - name: Commit & Push
+        run: |
+          git config --global user.name "Bot"
+          git add .
+          git commit -m "Auto-update Scores" || exit 0
+          git push
