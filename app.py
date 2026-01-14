@@ -9,9 +9,9 @@ warnings.filterwarnings('ignore')
 
 # 数据源配置
 CSV_LINKS = {
-    "2022-23": "https://docs.google.com/spreadsheets/d/e/2PACX-1vRfK4Q1d1pXZ4t7vq5Q3V0XwY8W7X8X8X8X8X8X8X8X8X8/pub?gid=0&single=true&output=csv",
-    "2023-24": "https://docs.google.com/spreadsheets/d/e/2PACX-1vRfK4Q1d1pXZ4t7vq5Q3V0XwY8W7X8X8X8X8X8X8X8X8/pub?gid=0&single=true&output=csv",
-    "2024-25": "https://docs.google.com/spreadsheets/d/e/2PACX-1vRfK4Q1d1pXZ4t7vq5Q3V0XwY8W7X8X8X8X8X8X8X8X8/pub?gid=0&single=true&output=csv"
+    "2023-24": "https://docs.google.com/spreadsheets/d/13fmn1LXuvm3tpHI2ZVJ2OYlaUJi3hzbYLe07_n29T1w/edit?usp=sharing",
+    "2024-25": "https://docs.google.com/spreadsheets/d/1ooZVm8U3fsfG_UtHyy7dpD_r4eMlsgwt1gg-4AGoZQo/edit?usp=sharing",
+    "2025-26": "https://docs.google.com/spreadsheets/d/1PVB1XRfrYrLTPLhCu5T08-tJdT--iHDV6mnUdENubws/edit?usp=sharing"
 }
 
 def fetch_and_clean_data(season):
