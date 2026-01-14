@@ -10,9 +10,9 @@ warnings.filterwarnings('ignore')
 # --- 核心修复部分：更新为 GitHub Raw 链接 ---
 # 请将下方的 URL 替换为您在 GitHub 上的实际 Raw 链接
 CSV_LINKS = {
-    "2023-24": "https://github.com/rookieflip2x/workflows/blob/main/NBA_2023-24_rookies.csv",
-    "2024-25": "https://github.com/rookieflip2x/workflows/blob/main/NBA_2024-25_rookies%20.csv",
-    "2025-26": "https://github.com/rookieflip2x/workflows/blob/main/NBA_2025-26_rookies%20.csv"
+    "2023-24": "https://raw.githubusercontent.com/rookieflip2x/workflows/main/NBA_2023-24_rookies.csv",
+    "2024-25": "https://raw.githubusercontent.com/rookieflip2x/workflows/main/NBA_2024-25_rookies%20.csv",
+    "2025-26": "https://raw.githubusercontent.com/rookieflip2x/workflows/main/NBA_2025-26_rookies%20.csv"
 }
 
 def fetch_and_clean_data(season):
