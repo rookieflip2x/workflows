@@ -128,7 +128,6 @@ def get_investment_signals(df):
     df['Recommendation'] = df['PPI'].apply(classify)
     return df
 
-# ==========================================
 # 4. 前端展示 (Streamlit UI)
 # ==========================================
 def main():
@@ -150,4 +149,29 @@ def main():
         # 输入验证过滤
         mask = (data['G'] >= min_g) & (data['MP'] >= min_m)
         df_processed = run_quant_model(data[mask], mode)
-        final_df = get_investment_signals(df_proces
+        final_df = get_investment_signals(df_processed).sort_values('PPI', ascending=False)
+        
+        # 关键指标展示
+        top_p = final_df.iloc[0]
+        st.metric("核心资产：", top_p['Player'], f"评分: {top_p['PPI']:.2f}")
+
+        # 图表展示 (使用合规调色盘)
+        fig = px.scatter(final_df, x='MP', y='PPI', color='Recommendation',
+                         hover_name='Player', size='PTS',
+                         title=f"{season} 赛季新秀资产评估分布",
+                         color_discrete_map={
+                             '💎 顶级标的 (Alpha)': '#FF4B4B',
+                             '✅ 优质资产 (Beta)': '#00CC96',
+                             'Hold 保持观察': '#FFAA00',
+                             'Underperform 减持': '#9EA8B1'
+                         })
+        st.plotly_chart(fig, use_container_width=True)
+
+        # 数据审计表
+        st.subheader("📋 审计与明细数据")
+        st.dataframe(final_df[['Player', 'PPI', 'Recommendation', 'PTS', 'FG%', 'MP', 'G']], use_container_width=True)
+    else:
+        st.warning("⚠️ 无法载入数据，请确认您的访问权限或联系系统管理员。")
+
+if __name__ == "__main__":
+    main()
