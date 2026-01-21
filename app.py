@@ -24,7 +24,7 @@ def load_and_clean_data():
         elif '球员' not in df.columns:
             df['球员'] = df.iloc[:, 1]
 
-        # 核心字段映射
+        # 核心字段映射 (针对 Basketball-Reference 格式)
         col_map = {
             'PTS.1': '场均得分', 'TRB.1': '场均篮板', 'AST.1': '场均助攻', 
             'STL.1': '场均抢断', 'BLK.1': '场均盖帽', 'MP.1': '场均分钟', 
@@ -47,29 +47,29 @@ def load_and_clean_data():
                 
         return df
     except Exception as e:
-        st.error(f"❌ 数据加载失败: {e}")
+        st.error(f"❌ 数据源加载失败: {e}")
         return None
 
 def apply_ppi_models(df):
-    """应用量化评估逻辑"""
+    """应用量化评估逻辑，结果保留两位小数"""
     # 基础产出评分
     df['基础产出评分'] = (df['场均得分'] + (df['场均篮板'] * 1.2) + (df['场均助攻'] * 1.5) + 
-                       (df['场均抢断'] * 2.0) + (df['场均盖帽'] * 2.0) - df['场均失误'])
+                       (df['场均抢断'] * 2.0) + (df['场均盖帽'] * 2.0) - df['场均失误']).round(2)
     # 效率加权评分
-    df['效率加权评分'] = ((df['场均得分'] + (df['场均篮板'] * 0.8) + (df['场均助攻'] * 1.2)) * (df['命中率'] + 0.5)) + \
-                       (df['场均抢断'] + df['场均盖帽']) * 2.0
+    df['效率加权评分'] = (((df['场均得分'] + (df['场均篮板'] * 0.8) + (df['场均助攻'] * 1.2)) * (df['命中率'] + 0.5)) + \
+                       (df['场均抢断'] + df['场均盖帽']) * 2.0).round(2)
     # 进阶潜力评分
-    df['进阶潜力评分'] = (((df['场均得分'] + df['场均篮板'] + df['场均助攻']) / (df['场均分钟'] + 0.1) * 36) * (df['命中率'] * 1.1)) - \
-                       (df['场均失误'] * 1.5)
+    df['进阶潜力评分'] = ((((df['场均得分'] + df['场均篮板'] + df['场均助攻']) / (df['场均分钟'] + 0.1) * 36) * (df['命中率'] * 1.1)) - \
+                       (df['场均失误'] * 1.5)).round(2)
     return df
 
 # --- 2. 页面设置 ---
-st.set_page_config(page_title="NBA新秀量化数据分析", layout="wide")
+st.set_page_config(page_title="NBA新秀量化数据看板", layout="wide")
 
-# --- 侧边栏及免责声明 ---
+# --- 侧边栏及合规声明 ---
 with st.sidebar:
-    st.warning("⚠️ **非投资建议声明**")
-    st.caption("本工具仅基于历史统计数据进行自动化数学计算，信号仅代表数据波动异常，不构成球星卡或任何金融资产的买卖建议。")
+    st.warning("⚠️ **免责声明**")
+    st.caption("本工具仅基于历史统计数据进行自动化数学计算，信号仅代表数据波动异常，不构成任何形式的投资建议。")
     st.divider()
     st.header("🎯 策略控制台")
     
@@ -96,24 +96,25 @@ if df_raw is not None:
     curr_df = df_raw[(df_raw['届别'] == sel_year) & (df_raw['Fetch_Date'] == target_dt)].copy()
     
     if curr_df.empty:
-        st.warning(f"⚠️ 在 {sel_date} 这一天没有找到数据。")
+        st.info(f"📅 暂无日期 {sel_date} 的数据，请尝试切换日期。")
     else:
         curr_df = apply_ppi_models(curr_df)
         
-        # 趋势计算 (7天前)
+        # 趋势计算 (对比上一个采集点，通常为7天)
         past_pool = df_raw[(df_raw['届别'] == sel_year) & (df_raw['Fetch_Date'] < target_dt)]
         if not past_pool.empty:
             last_past = past_pool['Fetch_Date'].max()
             past_data = apply_ppi_models(past_pool[past_pool['Fetch_Date'] == last_past].copy())
-            curr_df['7日涨幅'] = curr_df[strategy_col] - curr_df['球员'].map(past_data.set_index('球员')[strategy_col]).fillna(curr_df[strategy_col])
+            diff = curr_df[strategy_col] - curr_df['球员'].map(past_data.set_index('球员')[strategy_col]).fillna(curr_df[strategy_col])
+            curr_df['7日涨幅'] = diff.round(2)
         else:
-            curr_df['7日涨幅'] = 0.0
+            curr_df['7日涨幅'] = 0.00
 
         # 执行过滤
         final_df = curr_df[(curr_df['出场次数'] >= min_g) & (curr_df['场均分钟'] >= min_mp)].copy()
         
         if final_df.empty:
-            st.error("❌ 筛选条件过严，当前无符合条件球员。")
+            st.error("❌ 筛选条件过严，当前无符合条件的球员。")
         else:
             # 重排序号：按评分从高到低
             final_df = final_df.sort_values(strategy_col, ascending=False).reset_index(drop=True)
@@ -131,7 +132,7 @@ if df_raw is not None:
             final_df['模型信号'] = final_df.apply(get_model_signal, axis=1)
 
             # --- 4. UI 展示 ---
-            st.title(f"📊 {sel_year} 届新秀量化数据仪表盘 - {model_name}")
+            st.title(f"📊 {sel_year} 届新秀量化看板 - {model_name}模式")
 
             # 4.1 数据表格与颜色渲染
             def color_cell(val):
@@ -143,51 +144,60 @@ if df_raw is not None:
                 }
                 return colors.get(val, "")
 
-            st.subheader("📋 实时战力排行")
+            st.subheader("📋 实时战力排行 (已保留两位小数)")
             display_cols = ['球员', '模型信号', strategy_col, '7日涨幅', '场均得分', '命中率', '场均分钟', '出场次数']
+            
             st.dataframe(
-                final_df[display_cols].style.applymap(color_cell, subset=['模型信号']),
+                final_df[display_cols].style.format({
+                    strategy_col: "{:.2f}",
+                    "7日涨幅": "{:+.2f}",
+                    "命中率": "{:.3f}"
+                }).applymap(color_cell, subset=['模型信号']),
                 use_container_width=True
             )
 
-            # 4.2 球员对比 (并排布局)
+            # 4.2 球员分析 (并排布局)
             st.divider()
             col_left, col_right = st.columns(2)
 
             with col_left:
                 st.subheader("⚔️ 多维数据对标 (雷达图)")
-                pk_players = st.multiselect("选择球员 PK", final_df['球员'].unique(), default=final_df['球员'].head(2).tolist())
+                pk_players = st.multiselect("选择球员进行 PK 对比", final_df['球员'].unique(), default=final_df['球员'].head(2).tolist())
                 if pk_players:
                     fig_radar = go.Figure()
                     radar_metrics = ['基础产出评分', '效率加权评分', '进阶潜力评分', '场均得分', '场均篮板', '场均助攻']
                     for p in pk_players:
                         p_row = final_df[final_df['球员'] == p].iloc[0]
-                        # 归一化处理以便同表对比
+                        # 归一化处理
                         r_vals = [p_row[m] / (final_df[m].max() + 0.1) for m in radar_metrics]
                         fig_radar.add_trace(go.Scatterpolar(r=r_vals, theta=['量能', '效率', '潜力', '得分', '篮板', '助攻'], fill='toself', name=p))
-                    fig_radar.update_layout(polar=dict(radialaxis=dict(visible=True, range=[0, 1])))
+                    fig_radar.update_layout(polar=dict(radialaxis=dict(visible=True, range=[0, 1])), showlegend=True)
                     st.plotly_chart(fig_radar, use_container_width=True)
                     
 
             with col_right:
-                st.subheader("📈 历史成长走势")
-                trend_player = st.selectbox("选择单一球员查看趋势", final_df['球员'].unique())
+                st.subheader("📈 历史成长曲线")
+                trend_player = st.selectbox("选择球员查看评分走势", final_df['球员'].unique())
                 if trend_player:
                     hist_data = df_raw[df_raw['球员'] == trend_player].sort_values('Fetch_Date')
                     hist_data = apply_ppi_models(hist_data)
-                    fig_line = px.line(hist_data, x='Fetch_Date', y=strategy_col, markers=True, title=f"{trend_player} 评分演变")
+                    fig_line = px.line(hist_data, x='Fetch_Date', y=strategy_col, markers=True, 
+                                       title=f"{trend_player} 评分历史波动 (两位小数)")
+                    fig_line.update_layout(yaxis_tickformat='.2f')
                     st.plotly_chart(fig_line, use_container_width=True)
+                    
 
-            # 4.3 底部象限
+            # 4.3 底部象限图
             st.divider()
-            st.subheader("💡 数据增长分布 (评分 vs 趋势)")
+            st.subheader("💡 增长趋势分布图 (评分 vs 趋势)")
             fig_scatter = px.scatter(
                 final_df, x=strategy_col, y='7日涨幅', color='模型信号',
                 size='场均得分', hover_name='球员', text='球员',
                 labels={strategy_col: '当前量化评分', '7日涨幅': '7日动态变动'}
             )
+            fig_scatter.update_traces(textposition='top center')
             st.plotly_chart(fig_scatter, use_container_width=True)
 
-# 页脚
+# 页脚声明
 st.markdown("---")
-st.caption("© 2026 NBA 新秀自动化量化系统 | 数据源：Basketball-Reference | 仅供学术交流使用")
+st.caption("<div style='text-align: center; color: gray;'>© 2026 NBA 新秀自动化量化看板 | 数据源：Basketball-Reference | 模型评分及趋势已四舍五入保留至小数点后两位</div>", unsafe_allow_html=True)
