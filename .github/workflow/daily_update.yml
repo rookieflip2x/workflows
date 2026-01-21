@@ -1,0 +1,32 @@
+name: Daily NBA Data Update
+
+on:
+  schedule:
+    - cron: '0 0 * * *' # 每天 UTC 时间 0:00 运行 (北京时间上午 8:00)
+  workflow_dispatch: # 允许手动点击运行
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v3
+
+      - name: 设置 Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: 安装依赖
+        run: pip install pandas lxml html5lib requests
+
+      - name: 执行抓取脚本
+        run: python fetch_data.py
+
+      - name: 提交并推送到 GitHub
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add nba_rookies_combined.csv
+          git commit -m "自动更新 NBA 新秀数据 - $(date)" || exit 0
+          git push
