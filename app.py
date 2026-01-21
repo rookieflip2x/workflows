@@ -2,111 +2,122 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
+from datetime import timedelta
 import warnings
 
 warnings.filterwarnings('ignore')
 
 # --- 1. 数据源配置 ---
-# 请将下方链接替换为你 GitHub 仓库中 nba_rookies_combined.csv 的 Raw 链接
 DATA_URL = "https://raw.githubusercontent.com/rookieflip2x/workflows/main/nba_rookies_combined.csv"
 
+@st.cache_data(ttl=3600)
 def load_data():
-    """读取每日更新的汇总数据"""
     try:
         df = pd.read_csv(DATA_URL)
-        # 确保日期格式正确
         df['Fetch_Date'] = pd.to_datetime(df['Fetch_Date'])
+        
+        # 统一场均数据列名 (处理 .1 后缀)
+        rename_map = {'PTS.1': 'PTS_PG', 'TRB.1': 'TRB_PG', 'AST.1': 'AST_PG',
+                      'STL.1': 'STL_PG', 'BLK.1': 'BLK_PG', 'MP.1': 'MP_PG'}
+        for old_col, new_col in rename_map.items():
+            if old_col in df.columns:
+                df[new_col] = pd.to_numeric(df[old_col], errors='coerce')
+            else:
+                orig_col = old_col.replace('.1', '')
+                df[new_col] = pd.to_numeric(df[orig_col], errors='coerce')
+        
+        numeric_cols = ['PTS', 'TRB', 'AST', 'STL', 'BLK', 'TOV', 'FG%', 'MP', 'G']
+        for col in numeric_cols:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
         return df
     except Exception as e:
-        st.error(f"加载数据失败，请检查链接或文件是否存在: {e}")
+        st.error(f"加载失败: {e}")
         return None
 
-def process_ppi(df):
-    """针对汇总文件优化的 PPI 分析逻辑"""
-    # 1. 基础列映射与清洗
-    rename_dict = {
-        'Player': '球员', 'Age': '年龄', 'G': '出场', 'MP': '分钟',
-        'PTS': '得分', 'TRB': '篮板', 'AST': '助攻', 'STL': '抢断',
-        'BLK': '盖帽', 'FG%': '命中率', '3P': '三分', 'Rookie_Year': '赛季'
-    }
-    df = df.rename(columns=rename_dict)
+def calculate_all_ppi(df):
+    """应用三套模型公式"""
+    # 基础数据准备
+    tov_pg = (df['TOV'] / df['G']).replace([np.inf, -np.inf], 0).fillna(0)
     
-    # 2. 转换数值类型（强制转换防止报错）
-    numeric_cols = ['年龄', '出场', '分钟', '得分', '篮板', '助攻', '抢断', '盖帽', '命中率', '三分']
-    for col in numeric_cols:
-        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-
-    # 3. 计算 PPI (Player Performance Index)
-    # 权重公式：得分*1 + 篮板*1.2 + 助攻*1.5 + 抢断*2 + 盖帽*2 - 三分*0.5 (可根据喜好调整)
-    df['PPI'] = (df['得分'] * 1.0 + df['篮板'] * 1.2 + df['助攻'] * 1.5 + 
-                 df['抢断'] * 2.0 + df['盖帽'] * 2.0) / (df['分钟'] + 1)
-    
-    # 4. 投资信号判断
-    q75 = df['PPI'].quantile(0.75)
-    q90 = df['PPI'].quantile(0.90)
-    q50 = df['PPI'].quantile(0.50)
-
-    def get_signal(ppi):
-        if ppi >= q90: return '🚀 强力买入 (前10%)'
-        if ppi >= q75: return '📈 建议买入 (前25%)'
-        if ppi >= q50: return '📊 谨慎持有 (前50%)'
-        return '⚖️ 观望回避'
-
-    df['投资信号'] = df['PPI'].apply(get_signal)
+    # 1. 基础产出
+    df['PPI_Basic'] = (df['PTS_PG'] + (df['TRB_PG'] * 1.2) + (df['AST_PG'] * 1.5) + 
+                       (df['STL_PG'] * 2.0) + (df['BLK_PG'] * 2.0) - tov_pg)
+    # 2. 效率加权
+    df['PPI_Efficiency'] = (df['PTS_PG'] + (df['TRB_PG'] * 0.8) + (df['AST_PG'] * 1.2)) * \
+                           (df['FG%'] + 0.5) + (df['STL_PG'] + df['BLK_PG']) * 2.0
+    # 3. 进阶投资
+    df['PPI_Growth'] = ((df['PTS_PG'] + df['TRB_PG'] + df['AST_PG']) / (df['MP_PG'] + 0.1) * 36) * \
+                       (df['FG%'] * 1.1) - (tov_pg * 1.5)
     return df
 
-# --- 页面 UI 部分 ---
-st.set_page_config(page_title="NBA 新秀每日监控", layout="wide")
-st.title("🏀 NBA 新秀投资分析看板 (基于每日最新抓取)")
+# --- 2. 页面布局 ---
+st.set_page_config(page_title="NBA新秀量化增长监控", layout="wide")
 
-raw_df = load_data()
+df_raw = load_data()
 
-if raw_df is not None:
-    # 侧边栏筛选
+if df_raw is not None:
     with st.sidebar:
-        st.header("控制面板")
+        st.title("📈 增长监控中心")
+        years = sorted(df_raw['Rookie_Year'].unique(), reverse=True)
+        sel_year = st.selectbox("选择届别", years)
         
-        # 赛季选择
-        target_year = st.selectbox("选择新秀届别", sorted(raw_df['Rookie_Year'].unique(), reverse=True))
+        dates = sorted(df_raw[df_raw['Rookie_Year'] == sel_year]['Fetch_Date'].unique(), reverse=True)
+        sel_date = st.date_input("当前观察日期", dates[0] if dates else None)
         
-        # 自动定位该赛季最新的抓取日期
-        season_df = raw_df[raw_df['Rookie_Year'] == target_year]
-        latest_date = season_df['Fetch_Date'].max()
+        strategy = st.radio("选择评估模型", ["基础产出 (量能)", "效率加权 (质量)", "进阶投资 (潜力)"])
+        model_col = {"基础产出 (量能)": "PPI_Basic", "效率加权 (质量)": "PPI_Efficiency", "进阶投资 (潜力)": "PPI_Growth"}[strategy]
         
-        selected_date = st.date_input("查看历史快照 (默认最新)", latest_date)
-        
-    # 过滤数据：指定赛季 + 指定日期
-    final_df = season_df[season_df['Fetch_Date'] == pd.to_datetime(selected_date)]
-    
-    if final_df.empty:
-        st.warning(f"⚠️ {selected_date} 这一天没有抓取到数据，请选择其他日期。")
-    else:
-        final_df = process_ppi(final_df)
-        
-        # 数据看板
-        st.metric("分析球员总数", len(final_df), f"更新日期: {selected_date}")
-        
-        # 展示表格
-        st.subheader(f"🔥 {target_year} 届新秀战力排行")
-        st.dataframe(
-            final_df[['球员', '投资信号', 'PPI', '得分', '篮板', '助攻', '命中率', '分钟']].sort_values('PPI', ascending=False),
-            use_container_width=True,
-            column_config={
-                "PPI": st.column_config.NumberColumn("综合评分", format="%.2f"),
-                "命中率": st.column_config.NumberColumn("FG%", format="%.3f")
-            }
-        )
+        min_mp = st.slider("最小场均时间", 0, 35, 12)
 
-        # 可视化
-        col1, col2 = st.columns(2)
-        with col1:
-            st.subheader("分析分布图")
-            fig = px.scatter(final_df, x='分钟', y='PPI', color='投资信号', size='得分', hover_name='球员')
-            st.plotly_chart(fig, use_container_width=True)
-            
-        with col2:
-            st.subheader("各队新秀 PPI 贡献")
-            # 假设原始数据中有 Team (Tm) 列
-            if 'Tm' in final_df.columns:
-                fig_team = px.box(final_df, x='Tm', y='PPI', color='Tm')
-                st.plotly_chart(fig_team, use_container_width=True)
+    # --- 3. 趋势计算逻辑 ---
+    target_date = pd.to_datetime(sel_date)
+    past_date = target_date - timedelta(days=7)
+    
+    # 获取当前和过去的数据集
+    current_df = calculate_all_ppi(df_raw[(df_raw['Rookie_Year'] == sel_year) & (df_raw['Fetch_Date'] == target_date)].copy())
+    past_df = calculate_all_ppi(df_raw[(df_raw['Rookie_Year'] == sel_year) & (df_raw['Fetch_Date'] <= past_date)].sort_values('Fetch_Date', ascending=False).head(len(current_df)).copy())
+
+    # 合并趋势
+    if not past_df.empty:
+        trend_df = past_df[['Player', model_col]].rename(columns={model_col: 'prev_ppi'})
+        current_df = current_df.merge(trend_df, on='Player', how='left')
+        current_df['7日涨幅'] = current_df[model_col] - current_df['prev_ppi']
+    else:
+        current_df['7日涨幅'] = 0.0
+
+    current_df = current_df[current_df['MP_PG'] >= min_mp].sort_values(model_col, ascending=False)
+
+    # --- 4. 展示 ---
+    st.title(f"🏀 {sel_year} 届新秀趋势分析 - {strategy}")
+    
+    # 涨幅榜 Top 3
+    st.subheader("🚀 近 7 日表现飙升榜")
+    gainers = current_df.sort_values('7日涨幅', ascending=False).head(3)
+    c1, c2, c3 = st.columns(3)
+    for i, (idx, row) in enumerate(gainers.iterrows()):
+        [c1, c2, c3][i].metric(row['Player'], f"{row[model_col]:.2f}", f"{row['7日涨幅']:+.2f} (7D)")
+
+    # 主表
+    st.divider()
+    st.dataframe(
+        current_df[['Player', model_col, '7日涨幅', 'PTS_PG', 'FG%', 'MP_PG']],
+        use_container_width=True,
+        column_config={
+            model_col: st.column_config.NumberColumn("当前评分", format="%.2f"),
+            "7日涨幅": st.column_config.NumberColumn("趋势 (7D)", format="%+.2f"),
+            "FG%": st.column_config.NumberColumn("命中率", format="%.3f")
+        }
+    )
+
+    # 散点图：横轴评分，纵轴涨幅
+    st.subheader("🔥 潜力与增长象限图")
+    fig = px.scatter(
+        current_df, x=model_col, y='7日涨幅', 
+        size='MP_PG', color='7日涨幅', hover_name='Player',
+        text='Player', color_continuous_scale='RdYlGn',
+        labels={model_col: '当前综合评分', '7日涨幅': '7日评分变动'}
+    )
+    # 添加象限辅助线
+    fig.add_hline(y=0, line_dash="dash", line_color="gray")
+    st.plotly_chart(fig, use_container_width=True)
