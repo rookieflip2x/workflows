@@ -1,3 +1,14 @@
-streamlit
-pandas
-plotly
+# 核心 Web 框架
+streamlit>=1.30.0
+
+# 数据处理与分析
+pandas>=2.0.0
+numpy>=1.24.0
+
+# 交互式可视化
+plotly>=5.15.0
+
+# 网页抓取支持（如果本地运行 load_data 需要用到，建议保留）
+requests>=2.31.0
+
+# 处理日期和警告等标准库通常不需要在此列出，但确保 Python 环境在 3.9+
