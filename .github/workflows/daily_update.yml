@@ -25,8 +25,8 @@ jobs:
 
       - name: 提交并推送到 GitHub
         run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
+          git config --local user.email "rookieflip2x@gmail.com"
+          git config --local user.name "rookieflip2x"
           git add nba_rookies_combined.csv
           git commit -m "自动更新 NBA 新秀数据 - $(date)" || exit 0
           git push
