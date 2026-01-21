@@ -7,7 +7,7 @@ import warnings
 
 warnings.filterwarnings('ignore')
 
-# --- 1. 数据源配置 ---
+# --- 1. 数据源与清洗配置 ---
 DATA_URL = "https://raw.githubusercontent.com/rookieflip2x/workflows/main/nba_rookies_combined.csv"
 
 @st.cache_data(ttl=3600)
@@ -16,108 +16,136 @@ def load_data():
         df = pd.read_csv(DATA_URL)
         df['Fetch_Date'] = pd.to_datetime(df['Fetch_Date'])
         
-        # 统一场均数据列名 (处理 .1 后缀)
-        rename_map = {'PTS.1': 'PTS_PG', 'TRB.1': 'TRB_PG', 'AST.1': 'AST_PG',
-                      'STL.1': 'STL_PG', 'BLK.1': 'BLK_PG', 'MP.1': 'MP_PG'}
-        for old_col, new_col in rename_map.items():
-            if old_col in df.columns:
-                df[new_col] = pd.to_numeric(df[old_col], errors='coerce')
-            else:
-                orig_col = old_col.replace('.1', '')
-                df[new_col] = pd.to_numeric(df[orig_col], errors='coerce')
+        # 统一列名映射 (处理场均数据与中文转换)
+        # 注意：Basketball-Reference 的 CSV 中 .1 通常代表场均(Per Game)
+        col_map = {
+            'Player': '球员', 'PTS.1': '场均得分', 'TRB.1': '场均篮板', 
+            'AST.1': '场均助攻', 'STL.1': '场均抢断', 'BLK.1': '场均盖帽', 
+            'MP.1': '场均分钟', 'FG%': '命中率', 'G': '出场次数', 
+            'TOV': '总失误', 'Rookie_Year': '届别'
+        }
         
-        numeric_cols = ['PTS', 'TRB', 'AST', 'STL', 'BLK', 'TOV', 'FG%', 'MP', 'G']
-        for col in numeric_cols:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+        # 检查并处理列名
+        for eng, chn in col_map.items():
+            if eng in df.columns:
+                df[chn] = pd.to_numeric(df[eng], errors='coerce')
+            elif eng.replace('.1', '') in df.columns:
+                df[chn] = pd.to_numeric(df[eng.replace('.1', '')], errors='coerce')
+        
+        # 补全可能缺失的计算基础列
+        df['场均失误'] = (df['总失误'] / df['出场次数']).fillna(0)
         return df
     except Exception as e:
-        st.error(f"加载失败: {e}")
+        st.error(f"数据加载失败: {e}")
         return None
 
-def calculate_all_ppi(df):
-    """应用三套模型公式"""
-    # 基础数据准备
-    tov_pg = (df['TOV'] / df['G']).replace([np.inf, -np.inf], 0).fillna(0)
+def calculate_metrics(df):
+    """应用三套量化模型"""
+    # 模型 1: 基础产出 (量能)
+    df['基础产出'] = (df['场均得分'] + (df['场均篮板'] * 1.2) + (df['场均助攻'] * 1.5) + 
+                    (df['场均抢断'] * 2.0) + (df['场均盖帽'] * 2.0) - df['场均失误'])
     
-    # 1. 基础产出
-    df['PPI_Basic'] = (df['PTS_PG'] + (df['TRB_PG'] * 1.2) + (df['AST_PG'] * 1.5) + 
-                       (df['STL_PG'] * 2.0) + (df['BLK_PG'] * 2.0) - tov_pg)
-    # 2. 效率加权
-    df['PPI_Efficiency'] = (df['PTS_PG'] + (df['TRB_PG'] * 0.8) + (df['AST_PG'] * 1.2)) * \
-                           (df['FG%'] + 0.5) + (df['STL_PG'] + df['BLK_PG']) * 2.0
-    # 3. 进阶投资
-    df['PPI_Growth'] = ((df['PTS_PG'] + df['TRB_PG'] + df['AST_PG']) / (df['MP_PG'] + 0.1) * 36) * \
-                       (df['FG%'] * 1.1) - (tov_pg * 1.5)
+    # 模型 2: 效率加权 (质量)
+    prod = df['场均得分'] + (df['场均篮板'] * 0.8) + (df['场均助攻'] * 1.2)
+    df['效率加权'] = prod * (df['命中率'] + 0.5) + (df['场均抢断'] + df['场均盖帽']) * 2.0
+    
+    # 模型 3: 进阶投资 (潜力)
+    df['进阶潜力'] = ((df['场均得分'] + df['场均篮板'] + df['场均助攻']) / (df['场均分钟'] + 0.1) * 36) * \
+                    (df['命中率'] * 1.1) - (df['场均失误'] * 1.5)
     return df
 
-# --- 2. 页面布局 ---
-st.set_page_config(page_title="NBA新秀量化增长监控", layout="wide")
+# --- 2. 页面设置 ---
+st.set_page_config(page_title="NBA新秀量化投资系统", layout="wide")
 
 df_raw = load_data()
 
 if df_raw is not None:
     with st.sidebar:
-        st.title("📈 增长监控中心")
-        years = sorted(df_raw['Rookie_Year'].unique(), reverse=True)
-        sel_year = st.selectbox("选择届别", years)
+        st.header("🔍 筛选与策略")
+        years = sorted(df_raw['届别'].unique(), reverse=True)
+        sel_year = st.selectbox("选择新秀届别", years)
         
-        dates = sorted(df_raw[df_raw['Rookie_Year'] == sel_year]['Fetch_Date'].unique(), reverse=True)
-        sel_date = st.date_input("当前观察日期", dates[0] if dates else None)
+        dates = sorted(df_raw[df_raw['届别'] == sel_year]['Fetch_Date'].unique(), reverse=True)
+        sel_date = st.date_input("分析快照日期", dates[0] if dates else None)
         
-        strategy = st.radio("选择评估模型", ["基础产出 (量能)", "效率加权 (质量)", "进阶投资 (潜力)"])
-        model_col = {"基础产出 (量能)": "PPI_Basic", "效率加权 (质量)": "PPI_Efficiency", "进阶投资 (潜力)": "PPI_Growth"}[strategy]
+        strategy = st.radio("量化投资模型", ["基础产出", "效率加权", "进阶潜力"])
         
-        min_mp = st.slider("最小场均时间", 0, 35, 12)
+        st.divider()
+        min_g = st.slider("最少出场次数 (样本过滤)", 1, 50, 5)
+        min_mp = st.slider("最少场均分钟", 0, 35, 12)
 
-    # --- 3. 趋势计算逻辑 ---
-    target_date = pd.to_datetime(sel_date)
-    past_date = target_date - timedelta(days=7)
+    # --- 3. 趋势与数据处理 ---
+    target_dt = pd.to_datetime(sel_date)
+    past_dt = target_dt - timedelta(days=7)
     
-    # 获取当前和过去的数据集
-    current_df = calculate_all_ppi(df_raw[(df_raw['Rookie_Year'] == sel_year) & (df_raw['Fetch_Date'] == target_date)].copy())
-    past_df = calculate_all_ppi(df_raw[(df_raw['Rookie_Year'] == sel_year) & (df_raw['Fetch_Date'] <= past_date)].sort_values('Fetch_Date', ascending=False).head(len(current_df)).copy())
+    # 当前数据
+    curr_df = calculate_metrics(df_raw[(df_raw['届别'] == sel_year) & (df_raw['Fetch_Date'] == target_dt)].copy())
+    # 历史数据 (用于算涨幅)
+    past_df = calculate_metrics(df_raw[(df_raw['届别'] == sel_year) & (df_raw['Fetch_Date'] <= past_dt)]
+                               .sort_values('Fetch_Date', ascending=False).head(200).copy())
 
-    # 合并趋势
     if not past_df.empty:
-        trend_df = past_df[['Player', model_col]].rename(columns={model_col: 'prev_ppi'})
-        current_df = current_df.merge(trend_df, on='Player', how='left')
-        current_df['7日涨幅'] = current_df[model_col] - current_df['prev_ppi']
+        trend = past_df.groupby('球员')[strategy].first().reset_index().rename(columns={strategy: 'prev_score'})
+        curr_df = curr_df.merge(trend, on='球员', how='left')
+        curr_df['7日涨幅'] = curr_df[strategy] - curr_df['prev_score']
     else:
-        current_df['7日涨幅'] = 0.0
+        curr_df['7日涨幅'] = 0.0
 
-    current_df = current_df[current_df['MP_PG'] >= min_mp].sort_values(model_col, ascending=False)
+    # 过滤与重排序号
+    final_df = curr_df[(curr_df['出场次数'] >= min_g) & (curr_df['场均分钟'] >= min_mp)].copy()
+    final_df = final_df.sort_values(strategy, ascending=False).reset_index(drop=True)
+    final_df.index = final_df.index + 1 # 序号从1开始
+    final_df.index.name = '排名'
 
-    # --- 4. 展示 ---
-    st.title(f"🏀 {sel_year} 届新秀趋势分析 - {strategy}")
+    # 投资信号逻辑
+    def get_signal(row):
+        if row['7日涨幅'] > 2.0 and row[strategy] > final_df[strategy].quantile(0.8):
+            return "🔥 强烈推荐"
+        elif row['7日涨幅'] > 0:
+            return "📈 状态上升"
+        elif row['7日涨幅'] < -2.0:
+            return "⚠️ 表现下滑"
+        return "🔎 持续观察"
     
-    # 涨幅榜 Top 3
-    st.subheader("🚀 近 7 日表现飙升榜")
-    gainers = current_df.sort_values('7日涨幅', ascending=False).head(3)
-    c1, c2, c3 = st.columns(3)
-    for i, (idx, row) in enumerate(gainers.iterrows()):
-        [c1, c2, c3][i].metric(row['Player'], f"{row[model_col]:.2f}", f"{row['7日涨幅']:+.2f} (7D)")
+    final_df['投资建议'] = final_df.apply(get_signal, axis=1)
 
-    # 主表
-    st.divider()
+    # --- 4. 界面呈现 ---
+    st.title(f"🏀 {sel_year} 届新秀量化分析 - {strategy}视角")
+    
+    # 顶层核心指标
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        top_gain = final_df.sort_values('7日涨幅', ascending=False).iloc[0]
+        st.metric("本周爆发王", top_gain['球员'], f"+{top_gain['7日涨幅']:.2f}")
+    with c2:
+        top_val = final_df.iloc[0]
+        st.metric("战力天花板", top_val['球员'], f"{top_val[strategy]:.2f}")
+    with c3:
+        st.metric("在榜人数", len(final_df))
+
+    # 数据表格
+    st.subheader("📋 球员量化分析表")
+    show_cols = ['球员', '投资建议', strategy, '7日涨幅', '场均得分', '命中率', '场均分钟', '出场次数']
     st.dataframe(
-        current_df[['Player', model_col, '7日涨幅', 'PTS_PG', 'FG%', 'MP_PG']],
+        final_df[show_cols],
         use_container_width=True,
         column_config={
-            model_col: st.column_config.NumberColumn("当前评分", format="%.2f"),
-            "7日涨幅": st.column_config.NumberColumn("趋势 (7D)", format="%+.2f"),
-            "FG%": st.column_config.NumberColumn("命中率", format="%.3f")
+            strategy: st.column_config.NumberColumn(f"{strategy}总分", format="%.2f"),
+            "7日涨幅": st.column_config.NumberColumn("7日变动", format="%+.2f"),
+            "命中率": st.column_config.NumberColumn("命中率", format="%.3f"),
+            "投资建议": st.column_config.TextColumn("信号")
         }
     )
 
-    # 散点图：横轴评分，纵轴涨幅
-    st.subheader("🔥 潜力与增长象限图")
+    # 象限图分析
+    st.divider()
+    st.subheader("💡 投资机会识别 (评分 vs 增长)")
     fig = px.scatter(
-        current_df, x=model_col, y='7日涨幅', 
-        size='MP_PG', color='7日涨幅', hover_name='Player',
-        text='Player', color_continuous_scale='RdYlGn',
-        labels={model_col: '当前综合评分', '7日涨幅': '7日评分变动'}
+        final_df, x=strategy, y='7日涨幅', color='投资建议',
+        size='场均得分', hover_name='球员', text='球员',
+        labels={strategy: '模型综合评分', '7日涨幅': '近7日趋势变动'},
+        color_discrete_map={"🔥 强烈推荐": "#FF4B4B", "📈 状态上升": "#00CC96", "⚠️ 表现下滑": "#636EFA", "🔎 持续观察": "#FFAA00"}
     )
-    # 添加象限辅助线
+    fig.add_vline(x=final_df[strategy].mean(), line_dash="dash", line_color="gray")
     fig.add_hline(y=0, line_dash="dash", line_color="gray")
     st.plotly_chart(fig, use_container_width=True)
