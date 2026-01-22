@@ -6,9 +6,6 @@ import plotly.graph_objects as go
 from datetime import timedelta
 import warnings
 
-# 导入新的库用于执行JS
-from streamlit_js_eval import streamlit_js_eval
-
 # 忽略不必要的警告
 warnings.filterwarnings('ignore')
 
@@ -28,7 +25,7 @@ def load_and_clean_data():
 
         col_map = {
             'PTS.1': '场均得分', 'TRB.1': '场均篮板', 'AST.1': '场均助攻', 
-            'STL.1': '场均抢断', 'BLK.1': '场均盖帽', 'MP.1': '场均盖帽', 
+            'STL.1': '场均抢断', 'BLK.1': '场均盖帽', 'MP.1': '场均分钟', 
             'FG%': '命中率', 'G': '出场次数', 'TOV': '总失误', 'Rookie_Year': '届别'
         }
         
@@ -86,6 +83,7 @@ with st.sidebar:
         min_g = st.slider("最少出场 (G)", 1, 82, 5)
         min_mp = st.slider("最少分钟 (MP)", 0, 48, 12)
         
+        # 针对移动端的精简开关
         is_mobile = st.checkbox("移动端精简模式", value=True)
 
 # --- 4. 核心逻辑处理 ---
@@ -138,43 +136,14 @@ if df_raw is not None:
                 final_df[display_cols].style.format({strategy_col: "{:.2f}", "7日涨幅": "{:+.2f}"}).applymap(color_cell, subset=['模型信号']),
                 use_container_width=True
             )
-            
-            # --- 新增功能：生成海报 ---
-            st.markdown("---")
-            st.subheader("📸 分享与报告")
-            st.caption("点击下方按钮可生成当前页面截图，方便分享至新媒体平台。")
-            
-            # 标记要截图的区域
-            # 为了更好的控制，我们创建一个容器来包含需要截图的主要内容
-            # 注意：实际截图可能需要手动调整浏览器缩放或使用专门的截图工具来获取完美效果
-            # streamlit_js_eval 只能截图可视区域
-            
-            if st.button("生成并下载当前页面截图"):
-                # 使用 JavaScript 触发浏览器截图并下载
-                # 这里会触发浏览器下载一个名为 "screenshot.png" 的图片文件
-                # 注意：这个功能依赖于浏览器对 `html2canvas` 库的正常支持，
-                # Streamlit 本身不直接提供服务器端截图。
-                streamlit_js_eval(js_expressions=f"""
-                    html2canvas(document.body).then(function(canvas) {{
-                        var link = document.createElement('a');
-                        link.download = 'NBA_Rookie_Quant_Report_{sel_date}.png';
-                        link.href = canvas.toDataURL();
-                        link.click();
-                    }});
-                """, key="screenshot_button")
-                st.success("🎉 截图已触发下载，请检查您的浏览器下载记录！")
-                st.warning("⚠️ **温馨提示**：如果截图不完整，请手动调整浏览器缩放比例，或使用浏览器自带的截图功能。")
-            
-            # 在这里创建一个专门用于截图的海报区域，但streamlit_js_eval默认是截图整个body
-            # 如果要精确截图某个div，需要加载html2canvas库并精确指定div ID
 
             # --- 6. 交互对比 (移动端自动上下排列) ---
-            st.markdown("---") # 分隔线
+            st.divider()
             col_l, col_r = st.columns([1, 1])
             
             with col_l:
                 st.subheader("⚔️ 多维对标")
-                pk_players = st.multiselect("选择球员进行 PK 对比", final_df['球员'].unique(), default=final_df['球员'].head(2).tolist())
+                pk_players = st.multiselect("选择球员", final_df['球员'].unique(), default=final_df['球员'].head(2).tolist())
                 if pk_players:
                     fig_radar = go.Figure()
                     metrics = ['基础产出评分', '效率加权评分', '进阶潜力评分', '场均得分', '场均篮板', '场均助攻']
@@ -187,28 +156,13 @@ if df_raw is not None:
 
             with col_r:
                 st.subheader("📈 成长走势")
-                trend_p = st.selectbox("选择球员查看评分走势", final_df['球员'].unique())
+                trend_p = st.selectbox("选择球员", final_df['球员'].unique())
                 if trend_p:
                     hist_data = apply_ppi_models(df_raw[df_raw['球员'] == trend_p].copy()).sort_values('Fetch_Date')
-                    fig_line = px.line(hist_data, x='Fetch_Date', y=strategy_col, markers=True, 
-                                       title=f"{trend_p} 评分历史波动 (两位小数)")
+                    fig_line = px.line(hist_data, x='Fetch_Date', y=strategy_col, markers=True)
                     fig_line.update_layout(margin=dict(l=20, r=20, t=20, b=20), yaxis_tickformat='.2f')
                     st.plotly_chart(fig_line, use_container_width=True)
-                    
-            # 4.3 底部象限图
-            st.divider()
-            st.subheader("💡 增长趋势分布图 (评分 vs 趋势)")
-            fig_scatter = px.scatter(
-                final_df, x=strategy_col, y='7日涨幅', color='模型信号',
-                size='场均得分', hover_name='球员', text='球员',
-                labels={strategy_col: '当前量化评分', '7日涨幅': '7日动态变动'}
-            )
-            fig_scatter.update_traces(textposition='top center')
-            st.plotly_chart(fig_scatter, use_container_width=True)
 
-    else:
-        st.info(f"📅 在 {sel_date} 这一天没有找到数据，请尝试切换日期。")
-
-# 页脚声明
+# 页脚
 st.markdown("---")
-st.caption("<div style='text-align: center; color: gray;'>© 2026 NBA 新秀自动化量化看板 | 数据源：Basketball-Reference | 模型评分及趋势已四舍五入保留至小数点后两位</div>", unsafe_allow_html=True)
+st.caption("<center>© 2026 NBA Quant | 数据已保留两位小数</center>", unsafe_allow_html=True)
