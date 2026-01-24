@@ -15,8 +15,8 @@ NBA_RED = "#C9082A"
 NBA_WHITE = "#FFFFFF"
 
 # --- 资源链接更新 ---
-# 已更新为新 Logo：rookieflip2x_2.png
-LOGO_URL = "https://raw.githubusercontent.com/rookieflip2x/workflows/main/rookieflip2x_2.png"
+# 已更新为最新 Logo：rookieflip2x_3.png
+LOGO_URL = "https://raw.githubusercontent.com/rookieflip2x/workflows/main/rookieflip2x_3.png"
 DATA_URL = "https://raw.githubusercontent.com/rookieflip2x/workflows/main/nba_rookies_combined.csv"
 
 # --- 1. 页面配置 (包含新 Logo 浏览器图标) ---
@@ -79,9 +79,9 @@ def apply_ppi_models(df):
                        (df['场均失误'] * 1.5)).round(2)
     return df
 
-# --- 3. 侧边栏布局 (包含新 Logo 展示) ---
+# --- 3. 侧边栏布局 ---
 with st.sidebar:
-    # 展示新 Logo
+    # 展示最新 Logo
     st.image(LOGO_URL, use_container_width=True)
     st.title("🚀 RookieFlip2x")
     st.caption("数字化新秀量化评价系统")
@@ -186,7 +186,7 @@ if df_raw is not None:
             col_radar, col_line = st.columns(2)
             with col_radar:
                 st.subheader("⚔️ 球员多维 PK")
-                pk_players = st.multiselect("选择球员对比", final_df['球员'].unique(), default=final_df['球员'].head(2).tolist())
+                pk_players = st.multiselect("选择球员进行对比", final_df['球员'].unique(), default=final_df['球员'].head(2).tolist())
                 if pk_players:
                     fig_radar = go.Figure()
                     radar_metrics = ['基础产出评分', '效率加权评分', '进阶潜力评分', '场均得分', '场均篮板', '场均助攻']
