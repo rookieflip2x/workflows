@@ -102,4 +102,102 @@ with st.sidebar:
         st.divider()
         st.subheader("🛠️ 样本过滤")
         min_g = st.slider("最少出场次数", 1, 82, 5)
-        min_mp = st.slider("最少场均分钟", 0, 48
+        min_mp = st.slider("最少场均分钟", 0, 48, 12)
+
+        with st.expander("📌 球员状态标签说明"):
+            st.caption("**🔥 手感火热**: 表现优异且近期大幅上涨")
+            st.caption("**🆙 状态复苏**: 评分近期稳步上升")
+            st.caption("**👑 基石表现**: 长期维持极高水准且稳定")
+            st.caption("**❄️ 陷入低迷**: 评分近期出现明显下滑")
+            st.caption("**🕒 待机状态**: 表现持平，波动较小")
+
+# --- 3. 核心计算与显示逻辑 ---
+if df_raw is not None:
+    target_dt = pd.to_datetime(sel_date)
+    curr_df = df_raw[(df_raw['届别'] == sel_year) & (df_raw['Fetch_Date'] == target_dt)].copy()
+    
+    if curr_df.empty:
+        st.info(f"📅 暂无日期 {sel_date} 的数据，请切换日期。")
+    else:
+        curr_df = apply_ppi_models(curr_df)
+        
+        past_pool = df_raw[(df_raw['届别'] == sel_year) & (df_raw['Fetch_Date'] < target_dt)]
+        if not past_pool.empty:
+            last_past = past_pool['Fetch_Date'].max()
+            past_data = apply_ppi_models(past_pool[past_pool['Fetch_Date'] == last_past].copy())
+            diff = curr_df[strategy_col] - curr_df['球员'].map(past_data.set_index('球员')[strategy_col]).fillna(curr_df[strategy_col])
+            curr_df['变动趋势'] = diff.round(2)
+        else:
+            curr_df['变动趋势'] = 0.00
+
+        final_df = curr_df[(curr_df['出场次数'] >= min_g) & (curr_df['场均分钟'] >= min_mp)].copy()
+        
+        if final_df.empty:
+            st.error("❌ 筛选条件过严，当前无符合条件的球员。")
+        else:
+            final_df = final_df.sort_values(strategy_col, ascending=False).reset_index(drop=True)
+            final_df.index = final_df.index + 1
+            final_df.index.name = "排名"
+
+            def get_model_signal(row):
+                score, growth = row[strategy_col], row['变动趋势']
+                avg_score = final_df[strategy_col].mean()
+                if growth > 1.5 and score > avg_score: return "🔥 手感火热"
+                if growth > 0.5: return "🆙 状态复苏"
+                if growth < -1.5: return "❄️ 陷入低迷"
+                if score > avg_score * 1.3: return "👑 基石表现"
+                return "🕒 待机状态"
+            
+            final_df['模型信号'] = final_df.apply(get_model_signal, axis=1)
+
+            st.title(f"📊 {sel_year} 届新秀排行 - {model_name}维度")
+
+            def color_cell(val):
+                colors = {
+                    "🔥 手感火热": "background-color: #ff4b4b; color: white; font-weight: bold;",
+                    "🆙 状态复苏": "background-color: #e8f8f5; color: #117a65;",
+                    "❄️ 陷入低迷": "background-color: #fdedec; color: #943126;",
+                    "👑 基石表现": "background-color: #ebf5fb; color: #21618c; border: 1px solid #2e86c1;",
+                    "🕒 待机状态": "background-color: #f8f9f9; color: #7f8c8d;"
+                }
+                return colors.get(val, "")
+
+            st.subheader("📋 RookieFlip2x 实时战力榜")
+            display_cols = ['球员', '模型信号', strategy_col, '变动趋势', '场均得分', '命中率', '场均分钟', '出场次数']
+            
+            st.dataframe(
+                final_df[display_cols].style.format({
+                    strategy_col: "{:.2f}",
+                    "变动趋势": "{:+.2f}",
+                    "命中率": "{:.3f}"
+                }).applymap(color_cell, subset=['模型信号']),
+                use_container_width=True
+            )
+
+            st.divider()
+            col_left, col_right = st.columns(2)
+            with col_left:
+                st.subheader("⚔️ 球员多维对标")
+                pk_players = st.multiselect("选择对比球员", final_df['球员'].unique(), default=final_df['球员'].head(2).tolist())
+                if pk_players:
+                    fig_radar = go.Figure()
+                    radar_metrics = ['基础产出评分', '效率加权评分', '进阶潜力评分', '场均得分', '场均篮板', '场均助攻']
+                    for p in pk_players:
+                        p_row = final_df[final_df['球员'] == p].iloc[0]
+                        r_vals = [p_row[m] / (final_df[m].max() + 0.1) for m in radar_metrics]
+                        fig_radar.add_trace(go.Scatterpolar(r=r_vals, theta=['量能', '效率', '潜力', '得分', '篮板', '助攻'], fill='toself', name=p))
+                    fig_radar.update_layout(polar=dict(radialaxis=dict(visible=True, range=[0, 1])), showlegend=True)
+                    st.plotly_chart(fig_radar, use_container_width=True)
+
+            with col_right:
+                st.subheader("📈 历史评分曲线")
+                trend_player = st.selectbox("选择球员查看趋势", final_df['球员'].unique())
+                if trend_player:
+                    hist_data = df_raw[df_raw['球员'] == trend_player].sort_values('Fetch_Date')
+                    hist_data = apply_ppi_models(hist_data)
+                    fig_line = px.line(hist_data, x='Fetch_Date', y=strategy_col, markers=True, title=f"{trend_player} 评分变动记录")
+                    fig_line.update_layout(yaxis_tickformat='.2f')
+                    st.plotly_chart(fig_line, use_container_width=True)
+
+st.markdown("---")
+st.caption("<div style='text-align: center; color: gray;'>© 2026 RookieFlip2x（乐翻新秀）评价系统 | 数字化量化看板</div>", unsafe_allow_html=True)
