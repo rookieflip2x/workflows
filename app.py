@@ -31,7 +31,7 @@ def load_and_clean_data():
         col_map = {
             'PTS.1': '场均得分', 'TRB.1': '场均篮板', 'AST.1': '场均助攻', 
             'STL.1': '场均抢断', 'BLK.1': '场均盖帽', 'MP.1': '场均分钟', 
-            'FG%': '命中率', 'G': '出场次数', 'TOV': '总失误', 'Rookie_Year': '届别'
+            'FG%': '命中率', 'G': '出场次数', 'TOV': '总失误', 'Rookie_Year': '原始赛季年份'
         }
         
         for eng, chn in col_map.items():
@@ -40,9 +40,13 @@ def load_and_clean_data():
             elif eng.replace('.1', '') in df.columns:
                 df[chn] = pd.to_numeric(df[eng.replace('.1', '')], errors='coerce')
         
+        # --- 核心更新：届别逻辑转换 ---
+        # 26年数据对应25届，25年数据对应24届，以此类推
+        if '原始赛季年份' in df.columns:
+            df['届别'] = (df['原始赛季年份'] - 1).astype(str) + " 届"
+        
         df['场均失误'] = (df['总失误'] / df['出场次数']).fillna(0)
         
-        # 填充缺失值并初步保留两位小数
         calc_cols = ['场均得分', '场均篮板', '场均助攻', '场均抢断', '场均盖帽', '场均分钟', '命中率', '场均失误']
         for col in calc_cols:
             if col in df.columns:
@@ -76,9 +80,11 @@ with st.sidebar:
     
     if df_raw is not None:
         st.header("🎯 策略控制台")
+        # 届别选择
         years = sorted(df_raw['届别'].unique(), reverse=True)
-        sel_year = st.selectbox("选择届别", years)
+        sel_year = st.selectbox("选择新秀届别", years)
         
+        # 日期快照选择
         dates = sorted(df_raw[df_raw['届别'] == sel_year]['Fetch_Date'].unique(), reverse=True)
         sel_date = st.date_input("分析日期快照", dates[0] if dates else None)
         
@@ -111,7 +117,7 @@ if df_raw is not None:
     else:
         curr_df = apply_ppi_models(curr_df)
         
-        # 变动趋势
+        # 变动趋势计算
         past_pool = df_raw[(df_raw['届别'] == sel_year) & (df_raw['Fetch_Date'] < target_dt)]
         if not past_pool.empty:
             last_past = past_pool['Fetch_Date'].max()
@@ -142,7 +148,7 @@ if df_raw is not None:
             final_df['模型信号'] = final_df.apply(get_model_signal, axis=1)
 
             # --- 3.1 战力榜展示 ---
-            st.subheader(f"📋 {sel_year} 届实时战力榜 - {model_name}")
+            st.subheader(f"📋 {sel_year} 实时战力榜 - {model_name}")
 
             def color_cell(val):
                 colors = {
@@ -154,20 +160,19 @@ if df_raw is not None:
                 }
                 return colors.get(val, "")
 
-            # 重点：此处 .style.format 已更新场均得分与场均分钟为 {:.2f}
             display_cols = ['球员', '模型信号', strategy_col, '变动趋势', '场均得分', '命中率', '场均分钟', '出场次数']
             st.dataframe(
                 final_df[display_cols].style.format({
                     strategy_col: "{:.2f}",
                     "变动趋势": "{:+.2f}",
                     "命中率": "{:.3f}",
-                    "场均得分": "{:.2f}",   # 强制保留两位小数
-                    "场均分钟": "{:.2f}"    # 强制保留两位小数
+                    "场均得分": "{:.2f}",
+                    "场均分钟": "{:.2f}"
                 }).applymap(color_cell, subset=['模型信号']),
                 use_container_width=True
             )
 
-            # --- 3.2 球员个人分析 ---
+            # --- 3.2 球员个人对比与走势 ---
             st.divider()
             col_left, col_right = st.columns(2)
             with col_left:
@@ -201,28 +206,27 @@ if df_raw is not None:
 
             # --- 3.3 评分点状分布图 ---
             st.divider()
-            st.subheader(f"📍 实时战力评分点状分布图 ({sel_year}届)")
+            st.subheader(f"📍 实时战力评分分布 ({sel_year})")
             fig_dot = px.strip(final_df, x=strategy_col, 
                               orientation='h',
                               color='模型信号',
                               hover_name='球员',
-                              hover_data=['场均得分', '命中率', '场均分钟'], # 悬浮窗也会显示对应数值
+                              hover_data=['场均得分', '命中率', '场均分钟'],
                               color_discrete_map={
                                   "🔥 手感火热": NBA_RED,
                                   "👑 基石表现": NBA_BLUE,
                                   "🆙 状态复苏": "#117a65",
                                   "❄️ 陷入低迷": "#943126",
                                   "🕒 待机状态": "#7f8c8d"
-                              },
-                              title=f"当前维度：{model_name} (点越靠右表现越强)")
+                              })
             
             fig_dot.update_traces(marker=dict(size=12, opacity=0.7, line=dict(width=1, color='White')))
             fig_dot.update_layout(showlegend=True, height=300)
             st.plotly_chart(fig_dot, use_container_width=True)
 
-    # --- 3.4 届别成色分析 (底部) ---
+    # --- 3.4 届别成色分析 ---
     st.divider()
-    st.subheader("📅 届别成色分析 (大年/小年对比)")
+    st.subheader("📅 届别成色对比 (历史大/小年)")
     all_years_data = apply_ppi_models(df_raw.copy())
     latest_stats = all_years_data.sort_values('Fetch_Date').groupby(['届别', '球员']).tail(1)
     year_comparison = latest_stats.groupby('届别')[strategy_col].mean().round(2).reset_index()
@@ -234,7 +238,7 @@ if df_raw is not None:
         st.dataframe(year_comparison.sort_values('平均产出评分', ascending=False), hide_index=True, use_container_width=True)
     with col_y2:
         fig_year = px.bar(year_comparison, x='届别', y='平均产出评分', 
-                         title="选秀届别整体成色对比",
+                         title="新秀届别整体产出质量对比",
                          color='平均产出评分',
                          color_continuous_scale=[NBA_RED, NBA_BLUE])
         fig_year.update_layout(height=350, margin=dict(t=30, b=0))
