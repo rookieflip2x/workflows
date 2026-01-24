@@ -14,15 +14,16 @@ NBA_BLUE = "#17408B"
 NBA_RED = "#C9082A"
 NBA_WHITE = "#FFFFFF"
 
-# --- 资源链接 ---
-LOGO_URL = "https://raw.githubusercontent.com/rookieflip2x/workflows/main/rookieflip2x.png"
+# --- 资源链接更新 ---
+# 已更新为新 Logo：rookieflip2x_2.png
+LOGO_URL = "https://raw.githubusercontent.com/rookieflip2x/workflows/main/rookieflip2x_2.png"
 DATA_URL = "https://raw.githubusercontent.com/rookieflip2x/workflows/main/nba_rookies_combined.csv"
 
-# --- 1. 页面配置 (包含浏览器图标) ---
+# --- 1. 页面配置 (包含新 Logo 浏览器图标) ---
 st.set_page_config(
     page_title="RookieFlip2x 乐翻新秀数据评价系统", 
     layout="wide",
-    page_icon=LOGO_URL  # 将你的 Logo 设置为浏览器标签页图标
+    page_icon=LOGO_URL  
 )
 
 # --- 2. 数据加载与处理逻辑 ---
@@ -51,7 +52,7 @@ def load_and_clean_data():
             elif eng.replace('.1', '') in df.columns:
                 df[chn] = pd.to_numeric(df[eng.replace('.1', '')], errors='coerce')
         
-        # --- 届别减 1 逻辑：2026年数据 -> 25届 ---
+        # --- 届别减 1 逻辑：2026年数据展现为 25届 ---
         if '原始年份' in df.columns:
             df['届别'] = (df['原始年份'] - 1).astype(int)
         
@@ -78,9 +79,9 @@ def apply_ppi_models(df):
                        (df['场均失误'] * 1.5)).round(2)
     return df
 
-# --- 3. 侧边栏布局 (包含 Logo 展示) ---
+# --- 3. 侧边栏布局 (包含新 Logo 展示) ---
 with st.sidebar:
-    # 展示 Logo
+    # 展示新 Logo
     st.image(LOGO_URL, use_container_width=True)
     st.title("🚀 RookieFlip2x")
     st.caption("数字化新秀量化评价系统")
@@ -174,8 +175,8 @@ if df_raw is not None:
                     strategy_col: "{:.2f}",
                     "变动趋势": "{:+.2f}",
                     "命中率": "{:.3f}",
-                    "场均得分": "{:.2f}", # 保留两位小数
-                    "场均分钟": "{:.2f}"  # 保留两位小数
+                    "场均得分": "{:.2f}",
+                    "场均分钟": "{:.2f}"
                 }).applymap(color_cell, subset=['模型信号']),
                 use_container_width=True
             )
@@ -185,7 +186,7 @@ if df_raw is not None:
             col_radar, col_line = st.columns(2)
             with col_radar:
                 st.subheader("⚔️ 球员多维 PK")
-                pk_players = st.multiselect("选择球员进行对比", final_df['球员'].unique(), default=final_df['球员'].head(2).tolist())
+                pk_players = st.multiselect("选择球员对比", final_df['球员'].unique(), default=final_df['球员'].head(2).tolist())
                 if pk_players:
                     fig_radar = go.Figure()
                     radar_metrics = ['基础产出评分', '效率加权评分', '进阶潜力评分', '场均得分', '场均篮板', '场均助攻']
