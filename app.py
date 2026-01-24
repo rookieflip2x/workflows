@@ -89,7 +89,7 @@ with st.sidebar:
             | 维度名称 | 核心优势 | 适用场景 |
             | :--- | :--- | :--- |
             | **基础产出** | 全面反映产出 | 评估最佳新秀归属 |
-            | **效率加权** | 衡量进攻纯度 | 发现高效球星胚子 |
+            | **效率加权** | 衡量进攻纯度 | 发现高含金量球星胚子 |
             | **进阶潜力** | 挖掘单位上限 | 识别潜力“板凳匪徒” |
             """)
         
@@ -98,40 +98,15 @@ with st.sidebar:
         min_g = st.slider("最少出场次数", 1, 82, 5)
         min_mp = st.slider("最少场均分钟", 0, 48, 12)
 
-# --- 3. 核心计算逻辑 ---
+# --- 3. 核心计算与显示逻辑 ---
 if df_raw is not None:
-    # 3.1 届别成色分析 (大年/小年对比)
     st.title("🏆 RookieFlip2x 乐翻新秀数据评价系统")
     
-    # 计算各届平均分
-    all_years_data = apply_ppi_models(df_raw.copy())
-    # 取每个球员最新的快照进行统计
-    latest_stats = all_years_data.sort_values('Fetch_Date').groupby(['届别', '球员']).tail(1)
-    year_comparison = latest_stats.groupby('届别')[strategy_col].mean().round(2).reset_index()
-    year_comparison.columns = ['届别', '平均产出评分']
-    
-    with st.container():
-        st.subheader("📅 届别成色分析 (大年/小年对比)")
-        col1, col2 = st.columns([1, 2])
-        with col1:
-            st.write(f"当前策略：**{model_name}**")
-            st.dataframe(year_comparison.sort_values('平均产出评分', ascending=False), hide_index=True)
-        with col2:
-            fig_year = px.bar(year_comparison, x='届别', y='平均产出评分', 
-                             title="各届新秀整体表现对比",
-                             color='平均产出评分',
-                             color_continuous_scale=[NBA_RED, NBA_BLUE])
-            fig_year.update_layout(height=300, margin=dict(t=30, b=0))
-            st.plotly_chart(fig_year, use_container_width=True)
-
-    st.divider()
-
-    # 3.2 实时数据处理
     target_dt = pd.to_datetime(sel_date)
     curr_df = df_raw[(df_raw['届别'] == sel_year) & (df_raw['Fetch_Date'] == target_dt)].copy()
     
     if curr_df.empty:
-        st.info(f"📅 暂无日期 {sel_date} 的数据，请切换日期。")
+        st.info(f"📅 暂无日期 {sel_date} 的数据，请尝试切换日期。")
     else:
         curr_df = apply_ppi_models(curr_df)
         
@@ -165,7 +140,7 @@ if df_raw is not None:
             
             final_df['模型信号'] = final_df.apply(get_model_signal, axis=1)
 
-            # --- 4. 战力榜展示 ---
+            # --- 3.1 战力榜展示 ---
             st.subheader(f"📋 {sel_year} 届实时战力榜 - {model_name}")
 
             def color_cell(val):
@@ -188,7 +163,7 @@ if df_raw is not None:
                 use_container_width=True
             )
 
-            # 4.2 球员对标与曲线 (NBA 配色)
+            # --- 3.2 球员个人分析 ---
             st.divider()
             col_left, col_right = st.columns(2)
             with col_left:
@@ -196,7 +171,7 @@ if df_raw is not None:
                 pk_players = st.multiselect("对比球员", final_df['球员'].unique(), default=final_df['球员'].head(2).tolist())
                 if pk_players:
                     fig_radar = go.Figure()
-                    radar_colors = [NBA_BLUE, NBA_RED, "#007A33", "#FDB927"] # 蓝、红、绿、金
+                    radar_colors = [NBA_BLUE, NBA_RED, "#007A33", "#FDB927"]
                     radar_metrics = ['基础产出评分', '效率加权评分', '进阶潜力评分', '场均得分', '场均篮板', '场均助攻']
                     for i, p in enumerate(pk_players):
                         p_row = final_df[final_df['球员'] == p].iloc[0]
@@ -219,6 +194,38 @@ if df_raw is not None:
                                        color_discrete_sequence=[NBA_BLUE])
                     fig_line.update_layout(yaxis_tickformat='.2f')
                     st.plotly_chart(fig_line, use_container_width=True)
+
+            # --- 3.3 评分分布统计 (新增) ---
+            st.divider()
+            st.subheader(f"📊 实时战力榜球员评分分布 ({sel_year}届)")
+            fig_dist = px.histogram(final_df, x=strategy_col, 
+                                   nbins=15,
+                                   labels={strategy_col: '评分区间'},
+                                   title=f"当前维度：{model_name} (人数分布)",
+                                   color_discrete_sequence=[NBA_BLUE],
+                                   marginal="rug") # 底部显示密集度
+            fig_dist.update_layout(bargap=0.1)
+            st.plotly_chart(fig_dist, use_container_width=True)
+
+    # --- 3.4 届别成色分析 (移动至最下方) ---
+    st.divider()
+    st.subheader("📅 届别成色分析 (大年/小年对比)")
+    all_years_data = apply_ppi_models(df_raw.copy())
+    latest_stats = all_years_data.sort_values('Fetch_Date').groupby(['届别', '球员']).tail(1)
+    year_comparison = latest_stats.groupby('届别')[strategy_col].mean().round(2).reset_index()
+    year_comparison.columns = ['届别', '平均产出评分']
+    
+    col_y1, col_y2 = st.columns([1, 2])
+    with col_y1:
+        st.write(f"各届平均分统计 (**{model_name}**)")
+        st.dataframe(year_comparison.sort_values('平均产出评分', ascending=False), hide_index=True, use_container_width=True)
+    with col_y2:
+        fig_year = px.bar(year_comparison, x='届别', y='平均产出评分', 
+                         title="选秀届别整体成色对比",
+                         color='平均产出评分',
+                         color_continuous_scale=[NBA_RED, NBA_BLUE])
+        fig_year.update_layout(height=350, margin=dict(t=30, b=0))
+        st.plotly_chart(fig_year, use_container_width=True)
 
 st.markdown("---")
 st.caption("<div style='text-align: center; color: gray;'>© 2026 RookieFlip2x（乐翻新秀）评价系统 | 数字化量化看板</div>", unsafe_allow_html=True)
