@@ -18,13 +18,11 @@ def load_and_clean_data():
         df = pd.read_csv(DATA_URL)
         df['Fetch_Date'] = pd.to_datetime(df['Fetch_Date'])
         
-        # 确保球员姓名列存在
         if 'Player' in df.columns:
             df['球员'] = df['Player']
         elif '球员' not in df.columns:
             df['球员'] = df.iloc[:, 1]
 
-        # 核心字段映射
         col_map = {
             'PTS.1': '场均得分', 'TRB.1': '场均篮板', 'AST.1': '场均助攻', 
             'STL.1': '场均抢断', 'BLK.1': '场均盖帽', 'MP.1': '场均分钟', 
@@ -62,10 +60,9 @@ def apply_ppi_models(df):
 # --- 2. 页面设置 ---
 st.set_page_config(page_title="NBA新秀量化数据看板", layout="wide")
 
-# --- 侧边栏及合规声明 ---
+# --- 侧边栏 ---
 with st.sidebar:
     st.title("📈 NBA Quant")
-    st.warning("⚠️ **免责声明**\n数据驱动，不构成投资建议。")
     st.divider()
     
     df_raw = load_and_clean_data()
@@ -81,40 +78,37 @@ with st.sidebar:
         model_name = st.radio("量化评估模型", ["基础产出", "效率加权", "进阶潜力"])
         strategy_col = f"{model_name}评分"
 
-        # --- 新增：模型对比表格与逻辑展示 ---
-        with st.expander("📝 模型深度对比与选择指南", expanded=True):
+        # --- 模型对比说明 (简化版，移除公式和方案字样) ---
+        with st.expander("📝 模型选择指南", expanded=True):
             st.markdown("""
             | 模型名称 | 核心优势 | 适用场景 |
             | :--- | :--- | :--- |
-            | **基础产出** | 容错率高，真实产出 | 评估最佳新秀(ROY) |
+            | **基础产出** | 容错率高，真实产出 | 评估最佳新秀归属 |
             | **效率加权** | 剥离刷分水分 | 寻找球星胚子 |
             | **进阶潜力** | 发现被埋没珍珠 | 挖掘高效替补 |
             """)
             st.divider()
             if model_name == "基础产出":
-                st.info("**当前：基础产出 (Volume)**")
-                st.latex(r"PTS + 1.2\cdot REB + 1.5\cdot AST + 2\cdot Def - TOV")
-                st.caption("侧重全面性，全能型战士得分更高。")
+                st.info("**当前聚焦：赛场影响力**")
+                st.write("侧重全面性，综合得分、篮板、助攻及防守表现。")
             elif model_name == "效率加权":
-                st.info("**当前：效率加权 (Efficiency)**")
-                st.latex(r"(Base) \cdot (FG\% + 0.5) + Def")
-                st.caption("侧重终结质量，奖励高效进攻者。")
+                st.info("**当前聚焦：进攻含金量**")
+                st.write("侧重终结质量，奖励那些不浪费球权的高效进攻者。")
             else:
-                st.info("**当前：进阶潜力 (Potential)**")
-                st.latex(r"(Per36) \cdot (FG\% \cdot 1.1) - 1.5\cdot TOV")
-                st.caption("折算每36分钟产出，识别效率怪兽。")
+                st.info("**当前聚焦：未来天花板**")
+                st.write("折算每36分钟标准产出，识别单位时间内表现抢眼的潜力股。")
         
         st.divider()
         st.subheader("🛠️ 样本过滤")
         min_g = st.slider("最少出场次数 (G)", 1, 82, 5)
         min_mp = st.slider("最少场均分钟 (MP)", 0, 48, 12)
 
-        with st.expander("📌 信号定义 (方案B)"):
-            st.caption("**🔥 手感火热**: 评分高且近期大涨")
+        with st.expander("📌 球员状态标签说明"):
+            st.caption("**🔥 手感火热**: 表现优异且近期大幅上涨")
             st.caption("**🆙 状态复苏**: 评分近期稳步上升")
-            st.caption("**👑 基石表现**: 历史级别的高分且稳定")
-            st.caption("**❄️ 陷入低迷**: 评分近期明显回落")
-            st.caption("**🕒 待机状态**: 表现横盘盘整")
+            st.caption("**👑 基石表现**: 长期维持极高水准且稳定")
+            st.caption("**❄️ 陷入低迷**: 评分近期出现明显下滑")
+            st.caption("**🕒 待机状态**: 表现持平，波动较小")
 
 # --- 3. 核心计算与显示逻辑 ---
 if df_raw is not None:
@@ -155,7 +149,6 @@ if df_raw is not None:
             
             final_df['模型信号'] = final_df.apply(get_model_signal, axis=1)
 
-            # --- 4. UI 展示 ---
             st.title(f"📊 {sel_year} 届新秀量化看板 - {model_name}模式")
 
             def color_cell(val):
@@ -180,10 +173,8 @@ if df_raw is not None:
                 use_container_width=True
             )
 
-            # 4.2 球员分析 (并排布局)
             st.divider()
             col_left, col_right = st.columns(2)
-
             with col_left:
                 st.subheader("⚔️ 多维数据对标")
                 pk_players = st.multiselect("选择球员 PK", final_df['球员'].unique(), default=final_df['球员'].head(2).tolist())
@@ -198,13 +189,12 @@ if df_raw is not None:
                     st.plotly_chart(fig_radar, use_container_width=True)
 
             with col_right:
-                st.subheader("📈 历史成长曲线")
-                trend_player = st.selectbox("选择球员查看评分走势", final_df['球员'].unique())
+                st.subheader("📈 评分历史走势")
+                trend_player = st.selectbox("选择球员", final_df['球员'].unique())
                 if trend_player:
                     hist_data = df_raw[df_raw['球员'] == trend_player].sort_values('Fetch_Date')
                     hist_data = apply_ppi_models(hist_data)
-                    fig_line = px.line(hist_data, x='Fetch_Date', y=strategy_col, markers=True, 
-                                       title=f"{trend_player} {model_name}评分波动")
+                    fig_line = px.line(hist_data, x='Fetch_Date', y=strategy_col, markers=True, title=f"{trend_player} 评分变动")
                     fig_line.update_layout(yaxis_tickformat='.2f')
                     st.plotly_chart(fig_line, use_container_width=True)
 
@@ -219,4 +209,4 @@ if df_raw is not None:
             st.plotly_chart(fig_scatter, use_container_width=True)
 
 st.markdown("---")
-st.caption("<div style='text-align: center; color: gray;'>© 2026 NBA 新秀量化看板 | 数据源：BBall-Ref | 模型公式及说明已同步</div>", unsafe_allow_html=True)
+st.caption("<div style='text-align: center; color: gray;'>© 2026 NBA 新秀自动化量化看板 | 数据驱动分析</div>", unsafe_allow_html=True)
