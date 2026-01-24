@@ -68,7 +68,7 @@ st.set_page_config(page_title="RookieFlip2x 乐翻新秀数据评价系统", lay
 # --- 侧边栏 ---
 with st.sidebar:
     st.title("🚀 RookieFlip2x")
-    st.caption("数字化评价系统")
+    st.caption("乐翻新秀 · 数字化评价系统")
     st.divider()
     
     df_raw = load_and_clean_data()
@@ -98,7 +98,7 @@ with st.sidebar:
         min_g = st.slider("最少出场次数", 1, 82, 5)
         min_mp = st.slider("最少场均分钟", 0, 48, 12)
 
-# --- 3. 核心计算与显示逻辑 ---
+# --- 3. 核心逻辑 ---
 if df_raw is not None:
     st.title("🏆 RookieFlip2x 乐翻新秀数据评价系统")
     
@@ -195,39 +195,27 @@ if df_raw is not None:
                     fig_line.update_layout(yaxis_tickformat='.2f')
                     st.plotly_chart(fig_line, use_container_width=True)
 
-            # --- 3.3 评分点状分布图 (优化版 Strip Plot) ---
+            # --- 3.3 评分点状分布图 (Strip Plot) ---
             st.divider()
-            st.subheader(f"📍 实时战力评分分布 ({sel_year}届)")
-            
-            # 计算平均值
-            avg_score = final_df[strategy_col].mean()
-            
+            st.subheader(f"📍 实时战力评分点状分布图 ({sel_year}届)")
+            # 使用 Strip 图展示点状分布
             fig_dot = px.strip(final_df, x=strategy_col, 
                               orientation='h',
                               color='模型信号',
-                              size='场均得分', # 点的大小与得分挂钩
                               hover_name='球员',
-                              hover_data=['变动趋势', '命中率'],
+                              hover_data=['场均得分', '命中率'],
                               color_discrete_map={
                                   "🔥 手感火热": NBA_RED,
                                   "👑 基石表现": NBA_BLUE,
                                   "🆙 状态复苏": "#117a65",
                                   "❄️ 陷入低迷": "#943126",
                                   "🕒 待机状态": "#7f8c8d"
-                              })
+                              },
+                              title=f"当前维度：{model_name} (点越靠右表现越强)")
             
-            # 添加平均值参考线
-            fig_dot.add_vline(x=avg_score, line_dash="dash", line_color="gray", 
-                              annotation_text=f"平均水平: {avg_score:.2f}", 
-                              annotation_position="top left")
-            
-            fig_dot.update_traces(marker=dict(opacity=0.8, line=dict(width=1, color='White')))
-            fig_dot.update_layout(
-                xaxis_title=f"{model_name} 评分值",
-                yaxis_title="",
-                height=300,
-                showlegend=True
-            )
+            # 增加一些抖动(jitter)效果让点不重叠，并美化样式
+            fig_dot.update_traces(marker=dict(size=12, opacity=0.7, line=dict(width=1, color='White')))
+            fig_dot.update_layout(showlegend=True, height=300)
             st.plotly_chart(fig_dot, use_container_width=True)
 
     # --- 3.4 届别成色分析 (底部) ---
