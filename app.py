@@ -42,10 +42,11 @@ def load_and_clean_data():
         
         df['场均失误'] = (df['总失误'] / df['出场次数']).fillna(0)
         
+        # 填充缺失值并初步保留两位小数
         calc_cols = ['场均得分', '场均篮板', '场均助攻', '场均抢断', '场均盖帽', '场均分钟', '命中率', '场均失误']
         for col in calc_cols:
             if col in df.columns:
-                df[col] = df[col].fillna(0)
+                df[col] = df[col].fillna(0).round(2)
                 
         return df
     except Exception as e:
@@ -146,19 +147,22 @@ if df_raw is not None:
             def color_cell(val):
                 colors = {
                     "🔥 手感火热": f"background-color: {NBA_RED}; color: white; font-weight: bold;",
+                    "👑 基石表现": f"background-color: {NBA_BLUE}; color: white; font-weight: bold;",
                     "🆙 状态复苏": "background-color: #e8f8f5; color: #117a65;",
                     "❄️ 陷入低迷": "background-color: #fdedec; color: #943126;",
-                    "👑 基石表现": f"background-color: {NBA_BLUE}; color: white; font-weight: bold;",
                     "🕒 待机状态": "background-color: #f8f9f9; color: #7f8c8d;"
                 }
                 return colors.get(val, "")
 
+            # 重点：此处 .style.format 已更新场均得分与场均分钟为 {:.2f}
             display_cols = ['球员', '模型信号', strategy_col, '变动趋势', '场均得分', '命中率', '场均分钟', '出场次数']
             st.dataframe(
                 final_df[display_cols].style.format({
                     strategy_col: "{:.2f}",
                     "变动趋势": "{:+.2f}",
-                    "命中率": "{:.3f}"
+                    "命中率": "{:.3f}",
+                    "场均得分": "{:.2f}",   # 强制保留两位小数
+                    "场均分钟": "{:.2f}"    # 强制保留两位小数
                 }).applymap(color_cell, subset=['模型信号']),
                 use_container_width=True
             )
@@ -195,15 +199,14 @@ if df_raw is not None:
                     fig_line.update_layout(yaxis_tickformat='.2f')
                     st.plotly_chart(fig_line, use_container_width=True)
 
-            # --- 3.3 评分点状分布图 (Strip Plot) ---
+            # --- 3.3 评分点状分布图 ---
             st.divider()
             st.subheader(f"📍 实时战力评分点状分布图 ({sel_year}届)")
-            # 使用 Strip 图展示点状分布
             fig_dot = px.strip(final_df, x=strategy_col, 
                               orientation='h',
                               color='模型信号',
                               hover_name='球员',
-                              hover_data=['场均得分', '命中率'],
+                              hover_data=['场均得分', '命中率', '场均分钟'], # 悬浮窗也会显示对应数值
                               color_discrete_map={
                                   "🔥 手感火热": NBA_RED,
                                   "👑 基石表现": NBA_BLUE,
@@ -213,7 +216,6 @@ if df_raw is not None:
                               },
                               title=f"当前维度：{model_name} (点越靠右表现越强)")
             
-            # 增加一些抖动(jitter)效果让点不重叠，并美化样式
             fig_dot.update_traces(marker=dict(size=12, opacity=0.7, line=dict(width=1, color='White')))
             fig_dot.update_layout(showlegend=True, height=300)
             st.plotly_chart(fig_dot, use_container_width=True)
